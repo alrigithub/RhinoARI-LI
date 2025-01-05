@@ -1,0 +1,130 @@
+# r: requests
+import requests
+import Rhino
+import scriptcontext as sc
+import Eto.Drawing as drawing
+import Eto.Forms as forms
+
+# OpenAI API Configuration
+API_KEY = 'your_openai_api_key'
+ENDPOINT = 'https://api.openai.com/v1/chat/completions'
+
+headers = {
+    'Authorization': f'Bearer {API_KEY}',
+    'Content-Type': 'application/json'
+}
+
+# Function to send material names to ChatGPT for renaming
+def rename_materials_with_chatgpt(material_names):
+    prompt = (
+        "You are an expert in architectural design and naming conventions. "
+        "Rename the following materials to make them more suitable for use in a facade model. "
+        "Return the output as 'Original Name -> New Name' or similar pairs:\n"
+        + "\n".join(material_names)
+    )
+    data = {
+        'model': 'gpt-3.5-turbo',
+        'messages': [
+            {'role': 'system', 'content': 'You are a helpful assistant.'},
+            {'role': 'user', 'content': prompt}
+        ],
+        'max_tokens': 200,
+        'temperature': 0.7
+    }
+    try:
+        response = requests.post(ENDPOINT, headers=headers, json=data)
+        response.raise_for_status()
+
+        # Debugging: Print raw response
+        print("Raw Response:", response.json())
+
+        content = response.json().get('choices', [{}])[0].get('message', {}).get('content', '')
+        if not content:
+            print("Error: Empty response from ChatGPT.")
+            return []
+
+        # Enhanced parsing
+        renamed_pairs = []
+        for line in content.splitlines():
+            parts = line.split("->") if "->" in line else line.split()
+            if len(parts) == 2:
+                renamed_pairs.append((parts[0].strip(), parts[1].strip()))
+        return renamed_pairs
+    except requests.exceptions.RequestException as e:
+        print("Error during API call:", e)
+        return []
+
+# Eto UI for preview and confirmation
+class MaterialRenamePreview(forms.Dialog[bool]):
+    def __init__(self, material_mapping):
+        super(MaterialRenamePreview, self).__init__()
+        self.Title = "Preview Material Renaming"
+        self.ClientSize = drawing.Size(400, 300)
+        self.Padding = drawing.Padding(10)
+
+        # Create a list box to display the mapping
+        self.list_box = forms.ListBox()
+        for original, renamed in material_mapping:
+            self.list_box.Items.Add(f"{original.strip()} -> {renamed.strip()}")
+
+        # Add UI elements
+        ok_button = forms.Button()
+        ok_button.Text = "Confirm"
+
+        cancel_button = forms.Button()
+        cancel_button.Text = "Cancel"
+
+        ok_button.Click += self.on_ok
+        cancel_button.Click += self.on_cancel
+
+        # Layout
+        layout = forms.DynamicLayout()
+        layout.Spacing = drawing.Size(5, 5)
+        layout.AddRow(self.list_box)
+        layout.AddSeparateRow(None, ok_button, cancel_button, None)
+        self.Content = layout
+
+    def on_ok(self, sender, e):
+        self.Close(True)
+
+    def on_cancel(self, sender, e):
+        self.Close(False)
+
+# Main function
+def main():
+    if sc.doc is None:
+        sc.doc = Rhino.RhinoDoc.ActiveDoc
+
+    # Step 1: Get materials
+    material_names = [sc.doc.Materials[i].Name for i in range(sc.doc.Materials.Count)]
+    if not material_names:
+        print("No materials found in the project.")
+        return
+
+    # Step 2: Send to ChatGPT
+    print("Sending material names to ChatGPT for renaming...")
+    material_mapping = rename_materials_with_chatgpt(material_names)
+
+    if not material_mapping:
+        print("Failed to get renamed materials.")
+        return
+
+    # Step 3: Display preview
+    dialog = MaterialRenamePreview(material_mapping)
+    result = dialog.ShowModal(Rhino.UI.RhinoEtoApp.MainWindow)
+
+    if result:
+        # Step 4: Rename materials
+        for (original, renamed) in material_mapping:
+            for i in range(sc.doc.Materials.Count):
+                material = sc.doc.Materials[i]
+                if material.Name.strip() == original.strip():
+                    material.Name = renamed.strip()
+                    material.CommitChanges()
+        print("Materials renamed successfully!")
+    else:
+        print("Material renaming canceled by user.")
+
+# Execute the script
+if __name__ == "__main__":
+    main()

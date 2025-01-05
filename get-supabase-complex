@@ -1,0 +1,64 @@
+# r: requests
+# r: matplotlib
+import rhinoscriptsyntax as rs
+import requests
+import json
+import matplotlib.pyplot as plt
+import tempfile
+import os
+
+# Supabase details
+SUPABASE_URL = "https://your-supabase-url.supabase.co"
+SUPABASE_API_KEY = "your-supabase-api-key"
+TABLE_NAME = "table_area"
+
+def fetch_from_supabase():
+    url = f"{SUPABASE_URL}/rest/v1/{TABLE_NAME}"
+    headers = {
+        "apikey": SUPABASE_API_KEY,
+        "Authorization": f"Bearer {SUPABASE_API_KEY}"
+    }
+    
+    response = requests.get(url, headers=headers)
+    if response.status_code == 200:  # HTTP 200 means OK
+        data = response.json()
+        return data
+    else:
+        print(f"Failed to fetch data: {response.status_code} - {response.text}")
+        return None
+
+def display_graphical_data(data):
+    if not data:
+        print("No data to display.")
+        return
+
+    # Prepare data for plotting
+    versions = [record['massing_version'] for record in data]
+    areas = [record['area'] for record in data]
+
+    # Create the bar chart
+    plt.figure(figsize=(8, 6))
+    plt.bar(versions, areas, color='skyblue')
+    plt.xlabel('Massing Version')
+    plt.ylabel('Area (m2)')
+    plt.title('Massing Version vs Area')
+    plt.tight_layout()
+
+    # Save the plot to a temporary file
+    temp_dir = tempfile.gettempdir()
+    temp_file = os.path.join(temp_dir, 'plot.png')
+    plt.savefig(temp_file)
+    plt.close()
+
+    # Display the image in Rhino
+    rs.Command(f"_-PictureFrame {temp_file}")
+
+def main():
+    # Fetch data from Supabase
+    data = fetch_from_supabase()
+    # Display graphical data in Rhino
+    display_graphical_data(data)
+
+if __name__ == "__main__":
+    main()
+

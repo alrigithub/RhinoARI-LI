@@ -1,0 +1,67 @@
+import rhinoscriptsyntax as rs
+import requests
+import json
+
+# Supabase details
+SUPABASE_URL = "https://your-supabase-url.supabase.co"
+SUPABASE_API_KEY = "your-supabase-api-key"
+TABLE_NAME = "table_area"
+
+def send_to_supabase(date, massing_version, num_surfaces, total_area_m2):
+    url = f"{SUPABASE_URL}/rest/v1/{TABLE_NAME}"
+    headers = {
+        "Content-Type": "application/json",
+        "apikey": SUPABASE_API_KEY,
+        "Authorization": f"Bearer {SUPABASE_API_KEY}"
+    }
+    payload = {
+        "date": date,
+        "massing_version": massing_version,
+        "num_surfaces": num_surfaces,
+        "area": total_area_m2
+    }
+    
+    response = requests.post(url, headers=headers, data=json.dumps(payload))
+    if response.status_code == 201:  # HTTP 201 means Created
+        print("Data successfully sent to Supabase.")
+    else:
+        print(f"Failed to send data: {response.status_code} - {response.text}")
+
+def main():
+    # Prompt the user to select surfaces
+    surfaces = rs.GetObjects("Select surfaces to calculate", rs.filter.surface, preselect=True)
+    
+    if not surfaces:
+        print("No surfaces selected.")
+        return
+
+    # Prompt the user for additional inputs
+    massing_version = rs.StringBox("Enter Massing Version:", "v1.0", "Massing Version")
+    if not massing_version:
+        print("Massing version not provided.")
+        return
+    
+    # Calculate the number of surfaces
+    num_surfaces = len(surfaces)
+    
+    # Calculate the total surface area
+    total_area = 0.0
+    for surface in surfaces:
+        area = rs.SurfaceArea(surface)
+        if area:
+            total_area += area[0]  # The first element of the result is the area
+
+    # Convert the total area to square meters
+    total_area_m2 = total_area / 1e6
+
+    # Output the results locally
+    print(f"Nr of surfaces: {num_surfaces}")
+    print(f"Total area in m2: {total_area_m2:.2f} m2")
+
+    # Send data to Supabase
+    from datetime import datetime
+    current_date = datetime.now().isoformat()  # Current date and time in ISO 8601 format
+    send_to_supabase(current_date, massing_version, num_surfaces, total_area_m2)
+
+if __name__ == "__main__":
+    main()
